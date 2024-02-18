@@ -1,0 +1,7 @@
+.idea*
+src/components/__pycache__/
+src/data_preprocess/__pycache__/
+src/house_price_pipeline/__pycache__/
+src/house_price_prediction_model/__pycache__/
+src/utils/__pycache__/
+test_suite/__pycache__/

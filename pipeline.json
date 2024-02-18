@@ -1,0 +1,342 @@
+{
+  "components": {
+    "comp-data-preprocess": {
+      "executorLabel": "exec-data-preprocess",
+      "inputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "x_test_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "x_train_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "y_test_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "y_train_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-fetch-dataset-from-bucket": {
+      "executorLabel": "exec-fetch-dataset-from-bucket",
+      "outputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-model-evaluation": {
+      "executorLabel": "exec-model-evaluation",
+      "inputDefinitions": {
+        "artifacts": {
+          "model_path": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "x_test_data_path": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "y_test_data_path": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "r2score": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-model-fitting": {
+      "executorLabel": "exec-model-fitting",
+      "inputDefinitions": {
+        "artifacts": {
+          "x_train_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "y_train_dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "model_artifact_path": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "deploymentSpec": {
+    "executors": {
+      "exec-data-preprocess": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "data_preprocess"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'pyarrow==15.0.0' 'pandas==2.0.3' 'scikit-learn==1.3.2' 'fsspec==2024.2.0' 'gcsfs==2024.2.0' 'google-cloud-storage==2.14.0' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef data_preprocess(\n        dataset: dsl.Input[dsl.Dataset],\n        x_train_dataset: dsl.Output[dsl.Dataset],\n        x_test_dataset: dsl.Output[dsl.Dataset],\n        y_train_dataset: dsl.Output[dsl.Dataset],\n        y_test_dataset: dsl.Output[dsl.Dataset]\n):\n    from src.data_preprocess.preprocessing import house_data_preprocessing\n    import logging\n    import pandas as pd\n    logging.basicConfig(level=logging.INFO)\n    try:\n        logging.info(\"dataset preprocessing ..... \")\n        dataset1 = pd.read_parquet(dataset.path)\n        logging.info(f\"dataset col {dataset1.columns}\")\n        x_train, x_test, y_train, y_test = house_data_preprocessing(dataset1)\n        logging.info(\"dataset processed!\")\n\n        x_train.to_parquet(x_train_dataset.path)\n        x_test.to_parquet(x_test_dataset.path)\n        y_train.to_parquet(y_train_dataset.path)\n        y_test.to_parquet(y_test_dataset.path)\n        logging.info(\"preprocessed data saved in parquet file!!!\")\n\n    except Exception as e:\n        logging.info(\"preprocessed failed!\")\n        raise e\n\n"
+          ],
+          "image": "us-central1-docker.pkg.dev/marine-might-413408/customrepo/house_price_kubeflow:latest-1.0"
+        }
+      },
+      "exec-fetch-dataset-from-bucket": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "fetch_dataset_from_bucket"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'pyarrow==15.0.0' 'pandas==2.0.3' 'scikit-learn==1.3.2' 'fsspec==2024.2.0' 'gcsfs==2024.2.0' 'google-cloud-storage==2.14.0' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef fetch_dataset_from_bucket(\n        dataset: dsl.Output[dsl.Dataset]\n):\n    import logging\n    from src.utils.constant import gcs_dataset_path\n    from src.utils.helpers import fetch_dataset_from_bucket\n    logging.basicConfig(level=logging.INFO)\n\n    logging.info(\"dataset loading ....!\")\n    dataset_house = fetch_dataset_from_bucket(gcs_dataset_path)\n    logging.info(\"dataset loaded from bucket...!\")\n\n    logging.info(f\"dataset saving at parquet file {dataset.uri}\")\n    dataset_house.to_parquet(dataset.path)\n\n"
+          ],
+          "image": "us-central1-docker.pkg.dev/marine-might-413408/customrepo/house_price_kubeflow:latest-1.0"
+        }
+      },
+      "exec-model-evaluation": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "model_evaluation"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'pyarrow==15.0.0' 'pandas==2.0.3' 'scikit-learn==1.3.2' 'fsspec==2024.2.0' 'gcsfs==2024.2.0' 'google-cloud-storage==2.14.0' 'joblib==1.3.2' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef model_evaluation(\n        x_test_data_path: dsl.Input[dsl.Dataset],\n        y_test_data_path: dsl.Input[dsl.Dataset],\n        model_path: dsl.Input[dsl.Model],\n        r2score: dsl.Output[dsl.Metrics]\n):\n    from src.house_price_prediction_model.house_model import evaluation_model\n    import logging\n    logging.info(\"Reading model\")\n    import pickle\n    import joblib\n    import pandas as pd\n\n\n    try:\n        # with open(file_name, 'rb') as model_file:\n        model = joblib.load(model_path.path)\n        x_test = pd.read_parquet(x_test_data_path.path)\n        y_test = pd.read_parquet(y_test_data_path.path)\n        score = evaluation_model(model, x_test, y_test)\n        logging.info(f\"score model:{score}\")\n        r2score.log_metric(\"r2score\", score)\n    except Exception as e:\n        raise e\n\n"
+          ],
+          "image": "us-central1-docker.pkg.dev/marine-might-413408/customrepo/house_price_kubeflow:latest-1.0"
+        }
+      },
+      "exec-model-fitting": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "model_fitting"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'pyarrow==15.0.0' 'pandas==2.0.3' 'scikit-learn==1.3.2' 'fsspec==2024.2.0' 'gcsfs==2024.2.0' 'google-cloud-storage==2.14.0' 'joblib==1.3.2' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef model_fitting(\n        x_train_dataset: dsl.Input[dsl.Dataset],\n        y_train_dataset: dsl.Input[dsl.Dataset],\n        model_artifact_path: dsl.Output[dsl.Model]\n):\n    import logging\n    import pandas as pd\n    from src.house_price_prediction_model.house_model import house_price_train_model\n\n    logging.basicConfig(level=logging.INFO)\n    logging.info(f\"Reading processed train data from: {x_train_dataset}\")\n    logging.info(f\"Reading processed train data from: {y_train_dataset}\")\n\n    x_train_datasets = pd.read_parquet(x_train_dataset.path)\n    y_train_datasets = pd.read_parquet(y_train_dataset.path)\n\n    house_price_train_model(x_train_datasets, y_train_datasets, model_artifact_path)\n\n"
+          ],
+          "image": "us-central1-docker.pkg.dev/marine-might-413408/customrepo/house_price_kubeflow:latest-1.0"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "description": "house_price_prediction_test",
+    "name": "house-price-pipelines"
+  },
+  "root": {
+    "dag": {
+      "outputs": {
+        "artifacts": {
+          "model-evaluation-r2score": {
+            "artifactSelectors": [
+              {
+                "outputArtifactKey": "r2score",
+                "producerSubtask": "model-evaluation"
+              }
+            ]
+          }
+        }
+      },
+      "tasks": {
+        "data-preprocess": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-data-preprocess"
+          },
+          "dependentTasks": [
+            "fetch-dataset-from-bucket"
+          ],
+          "inputs": {
+            "artifacts": {
+              "dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "dataset",
+                  "producerTask": "fetch-dataset-from-bucket"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "data-preprocess"
+          }
+        },
+        "fetch-dataset-from-bucket": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-fetch-dataset-from-bucket"
+          },
+          "taskInfo": {
+            "name": "fetch-dataset-from-bucket"
+          }
+        },
+        "model-evaluation": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-model-evaluation"
+          },
+          "dependentTasks": [
+            "data-preprocess",
+            "model-fitting"
+          ],
+          "inputs": {
+            "artifacts": {
+              "model_path": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model_artifact_path",
+                  "producerTask": "model-fitting"
+                }
+              },
+              "x_test_data_path": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "x_test_dataset",
+                  "producerTask": "data-preprocess"
+                }
+              },
+              "y_test_data_path": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "y_test_dataset",
+                  "producerTask": "data-preprocess"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "model-evaluation"
+          }
+        },
+        "model-fitting": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-model-fitting"
+          },
+          "dependentTasks": [
+            "data-preprocess"
+          ],
+          "inputs": {
+            "artifacts": {
+              "x_train_dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "x_train_dataset",
+                  "producerTask": "data-preprocess"
+                }
+              },
+              "y_train_dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "y_train_dataset",
+                  "producerTask": "data-preprocess"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "model-fitting"
+          }
+        }
+      }
+    },
+    "outputDefinitions": {
+      "artifacts": {
+        "model-evaluation-r2score": {
+          "artifactType": {
+            "schemaTitle": "system.Metrics",
+            "schemaVersion": "0.0.1"
+          }
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.7.0"
+}
